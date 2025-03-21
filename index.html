@@ -45,6 +45,17 @@
       font-size: 14px;
       pointer-events: none;
     }
+    #coordinates-counter {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background-color: rgba(0, 0, 0, 0.5);
+      color: white;
+      padding: 10px;
+      border-radius: 5px;
+      font-size: 16px;
+      pointer-events: none;
+    }
   </style>
 </head>
 <body>
@@ -59,6 +70,7 @@
   </div>
   <div id="speed-indicator">Speed: 5.0</div>
   <div id="position-indicator">Position: (0, 0)</div>
+  <div id="coordinates-counter">X: 0 | Y: 0</div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script>
@@ -553,6 +565,7 @@
     // No maximum speed limit
     const speedIndicator = document.getElementById('speed-indicator');
     const positionIndicator = document.getElementById('position-indicator');
+    const coordinatesCounter = document.getElementById('coordinates-counter');
     
     // Mouse control variables
     let mouseX = 0;
@@ -725,6 +738,12 @@
       
       // Update position indicator
       positionIndicator.textContent = `Position: (${Math.floor(playerModel.position.x)}, ${Math.floor(playerModel.position.z)})`;
+      
+      // Update position indicator
+      positionIndicator.textContent = `Position: (${Math.floor(playerModel.position.x)}, ${Math.floor(playerModel.position.z)})`;
+      
+      // Update coordinates counter with precise values
+      coordinatesCounter.textContent = `X: ${playerModel.position.x.toFixed(2)} | Y: ${playerModel.position.z.toFixed(2)}`;
       
       // Update chunks based on new position
       updateChunks();
