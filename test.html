@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Infinite Procedural Forest with Clouds</title>
+  <style>
+    body { 
+      margin: 0; 
+      overflow: hidden; 
+      font-family: Arial, sans-serif;
+    }
+    canvas { 
+      display: block; 
+    }
+    #instructions {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background-color: rgba(0, 0, 0, 0.5);
+      color: white;
+      padding: 10px;
+      border-radius: 5px;
+      pointer-events: none;
+    }
+    #speed-indicator {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      background-color: rgba(0, 0, 0, 0.5);
+      color: white;
+      padding: 5px 10px;
+      border-radius: 3px;
+      font-size: 14px;
+      pointer-events: none;
+    }
+    #position-indicator {
+      position: absolute;
+      bottom: 50px;
+      left: 20px;
+      background-color: rgba(0, 0, 0, 0.5);
+      color: white;
+      padding: 5px 10px;
+      border-radius: 3px;
+      font-size: 14px;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="instructions">
+    <h3>Controls:</h3>
+    <p>W, A, S, D - Move around</p>
+    <p>Mouse - Look around</p>
+    <p>Mouse Wheel - Adjust movement speed</p>
+    <p>V - Toggle between first-person and third-person view</p>
+    <p>Click on the scene to enable mouse controls</p>
+    <p>ESC - Disable mouse controls</p>
+  </div>
+  <div id="speed-indicator">Speed: 5.0</div>
+  <div id="position-indicator">Position: (0, 0)</div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script>
+    // Scene setup
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x87CEEB); // Sky blue background
+    
+    // Camera
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(0, 1.7, 0); // Eye height of a person
+    
+    // Renderer with enhanced shadows
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Softer shadow edges
+    document.body.appendChild(renderer.domElement);
+    
+    // Lights
+    const ambientLight = new THREE.AmbientLight(0x404040, 0.5);
+    scene.add(ambientLight);
+    
+    // Directional light setup (sun)
+    const directionalLight = new THREE.DirectionalLight(0xfffaea, 1.0);
+    directionalLight.position.set(50, 100, 30); // High position to cast long shadows
+    directionalLight.castShadow = true;
+    
+    // Improve shadow quality
+    directionalLight.shadow.mapSize.width = 2048;
+    directionalLight.shadow.mapSize.height = 2048;
+    directionalLight.shadow.camera.near = 0.1;
+    directionalLight.shadow.camera.far = 500;
+    directionalLight.shadow.camera.left = -100;
+    directionalLight.shadow.camera.right = 100;
+    directionalLight.shadow.camera.top = 100;
+    directionalLight.shadow.camera.bottom = -100;
+    directionalLight.shadow.bias = -0.0005; // Prevent shadow acne
+    
+    // Add directional light target
+    directionalLight.target = new THREE.Object3D();
+    directionalLight.target.position.set(0, 0, 0);
+    scene.add(directionalLight.target);
+    scene.add(directionalLight);
+    
+    // Player character
+    const playerModel = new THREE.Group();
+    scene.add(playerModel);
+    
+    // Create simple character model
+    function createCharacterModel() {
+      // Body
+      const bodyGeometry = new THREE.CylinderGeometry(0.3, 0.3, 1.0, 8);
+      const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0x2244AA });
+      const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+      body.position.y = 0.5;
+      body.castShadow = true;
+      playerModel.add(body);
+      
+      // Head
+      const headGeometry = new THREE.SphereGeometry(0.25, 16, 16);
+      const headMaterial = new THREE.MeshStandardMaterial({ color: 0xFFD6A5 });
+      const head = new THREE.Mesh(headGeometry, headMaterial);
+      head.position.y = 1.25;
+      head.castShadow = true;
+      playerModel.add(head);
+      
+      // Arms
+      const armGeometry = new THREE.BoxGeometry(0.15, 0.6, 0.15);
+      const armMaterial = new THREE.MeshStandardMaterial({ color: 0x2244AA });
+      
+      const leftArm = new THREE.Mesh(armGeometry, armMaterial);
+      leftArm.position.set(-0.4, 0.7, 0);
+      leftArm.castShadow = true;
+      playerModel.add(leftArm);
+      
+      const rightArm = new THREE.Mesh(armGeometry, armMaterial);
+      rightArm.position.set(0.4, 0.7, 0);
+      rightArm.castShadow = true;
+      playerModel.add(rightArm);
+      
+      // Legs
+      const legGeometry = new THREE.BoxGeometry(0.15, 0.6, 0.15);
+      const legMaterial = new THREE.MeshStandardMaterial({ color: 0x1A3366 });
+      
+      const leftLeg = new THREE.Mesh(legGeometry, legMaterial);
+      leftLeg.position.set(-0.15, 0, 0);
+      leftLeg.castShadow = true;
+      playerModel.add(leftLeg);
+      
+      const rightLeg = new THREE.Mesh(legGeometry, legMaterial);
+      rightLeg.position.set(0.15, 0, 0);
+      rightLeg.castShadow = true;
+      playerModel.add(rightLeg);
+    }
+    
+    createCharacterModel();
+    
+    // View mode (first-person or third-person)
+    let viewMode = 'third-person'; // Start in third-person by default
+    let cameraOffset = new THREE.Vector3(0, 2.5, 7); // Camera position relative to player in third-person
+    
+    // Helper object for camera orientation
+    const cameraHelper = new THREE.Object3D();
+    playerModel.add(cameraHelper);
+    cameraHelper.position.set(0, 1.7, 0);
+    
+    // Ground
+    const groundGeometry = new THREE.PlaneGeometry(1000, 1000);
+    const groundMaterial = new THREE.MeshStandardMaterial({ 
+      color: 0x4CAF50,
+      roughness: 0.8,
+      metalness: 0.2
+    });
+    const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
+    
+    // Create a tree function
+    function createTree(x, z, type = Math.floor(Math.random() * 3)) {
+      const tree = new THREE.Group();
+      
+      // Tree trunk
+      const trunkGeometry = new THREE.CylinderGeometry(0.2, 0.3, 1.5, 8);
+      const trunkMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0x8B4513,
+        roughness: 0.9
+      });
+      const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
+      trunk.position.y = 0.75;
+      trunk.castShadow = true;
+      trunk.receiveShadow = true;
+      tree.add(trunk);
+      
+      // Tree leaves with different types
+      let leavesGeometry;
+      let leavesMaterial;
+      
+      if (type === 0) {
+        // Pine tree
+        leavesGeometry = new THREE.ConeGeometry(1, 2, 8);
+        leavesMaterial = new THREE.MeshStandardMaterial({ 
+          color: 0x2E8B57,
+          roughness: 0.8
+        });
+        
+        // Multiple leaf layers
+        for (let i = 0; i < 3; i++) {
+          const leaves = new THREE.Mesh(leavesGeometry, leavesMaterial);
+          leaves.position.y = 1.5 + i * 0.6;
+          leaves.scale.set(1 - i * 0.15, 1 - i * 0.1, 1 - i * 0.15);
+          leaves.castShadow = true;
+          leaves.receiveShadow = true;
+          tree.add(leaves);
+        }
+      } else if (type === 1) {
+        // Rounded tree
+        leavesGeometry = new THREE.SphereGeometry(1.2, 8, 8);
+        leavesMaterial = new THREE.MeshStandardMaterial({ 
+          color: 0x228B22,
+          roughness: 0.7
+        });
+        
+        const leaves = new THREE.Mesh(leavesGeometry, leavesMaterial);
+        leaves.position.y = 2.2;
+        leaves.castShadow = true;
+        leaves.receiveShadow = true;
+        tree.add(leaves);
+      } else {
+        // Tall thin tree
+        leavesGeometry = new THREE.CylinderGeometry(0.6, 1, 3, 8);
+        leavesMaterial = new THREE.MeshStandardMaterial({ 
+          color: 0x006400,
+          roughness: 0.8
+        });
+        
+        const leaves = new THREE.Mesh(leavesGeometry, leavesMaterial);
+        leaves.position.y = 2.5;
+        leaves.castShadow = true;
+        leaves.receiveShadow = true;
+        tree.add(leaves);
+      }
+      
+      tree.position.set(x, 0, z);
+      
+      // Add some random rotation for natural look
+      tree.rotation.y = Math.random() * Math.PI * 2;
+      
+      // Add some random scaling for variety
+      const scale = 0.8 + Math.random() * 0.6;
+      tree.scale.set(scale, scale, scale);
+      
+      return tree;
+    }
+    
+    // Create a cabin function
+    function createCabin(x, z) {
+      const cabin = new THREE.Group();
+      
+      // Cabin base
+      const baseGeometry = new THREE.BoxGeometry(3, 2, 3.5);
+      const woodMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0x8B5A2B,
+        roughness: 0.7
+      });
+      const base = new THREE.Mesh(baseGeometry, woodMaterial);
+      base.position.y = 1;
+      base.castShadow = true;
+      base.receiveShadow = true;
+      cabin.add(base);
+      
+      // Cabin roof
+      const roofGeometry = new THREE.ConeGeometry(3, 1.5, 4);
+      const roofMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0x8B0000,
+        roughness: 0.6
+      });
+      const roof = new THREE.Mesh(roofGeometry, roofMaterial);
+      roof.position.y = 2.75;
+      roof.rotation.y = Math.PI / 4;
+      roof.castShadow = true;
+      roof.receiveShadow = true;
+      cabin.add(roof);
+      
+      // Door
+      const doorGeometry = new THREE.PlaneGeometry(0.7, 1.2);
+      const doorMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0x4A3520,
+        roughness: 0.8,
+        side: THREE.DoubleSide
+      });
+      const door = new THREE.Mesh(doorGeometry, doorMaterial);
+      door.position.set(0, 0.6, 1.751);
+      door.receiveShadow = true;
+      cabin.add(door);
+      
+      // Window
+      const windowGeometry = new THREE.PlaneGeometry(0.5, 0.5);
+      const windowMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0x87CEEB,
+        roughness: 0.2,
+        metalness: 0.8,
+        side: THREE.DoubleSide
+      });
+      const window1 = new THREE.Mesh(windowGeometry, windowMaterial);
+      window1.position.set(1, 1.2, 1.751);
+      window1.receiveShadow = true;
+      cabin.add(window1);
+      
+      const window2 = new THREE.Mesh(windowGeometry, windowMaterial);
+      window2.position.set(-1, 1.2, 1.751);
+      window2.receiveShadow = true;
+      cabin.add(window2);
+      
+      cabin.position.set(x, 0, z);
+      
+      // Random rotation for variety
+      cabin.rotation.y = Math.PI / 2 * Math.floor(Math.random() * 4);
+      
+      return cabin;
+    }
+    
+    // Cloud creation function with better shadow implementation
+    function createCloud(x, y, z, size = 1) {
+      const cloud = new THREE.Group();
+      
+      // Create a cluster of spheres to form a cloud
+      const cloudMaterial = new THREE.MeshStandardMaterial({
+        color: 0xFFFFFF,
+        transparent: true,
+        opacity: 0.8,
+        roughness: 1,
+        metalness: 0
+      });
+      
+      // Number of puffs in each cloud
+      const puffCount = 5 + Math.floor(Math.random() * 5);
+      
+      // Create container for all cloud puffs
+      const puffs = new THREE.Group();
+      cloud.add(puffs);
+      
+      for (let i = 0; i < puffCount; i++) {
+        // Random size for each puff
+        const puffSize = (0.5 + Math.random() * 0.7) * size;
+        const puffGeometry = new THREE.SphereGeometry(puffSize, 7, 7);
+        const puff = new THREE.Mesh(puffGeometry, cloudMaterial);
+        
+        // Make all puffs cast shadows
+        puff.castShadow = true;
+        
+        // Arrange puffs in a roughly circular pattern
+        const angle = (i / puffCount) * Math.PI * 2;
+        const radius = Math.random() * size;
+        puff.position.set(
+          Math.cos(angle) * radius,
+          Math.random() * size * 0.3,
+          Math.sin(angle) * radius
+        );
+        
+        puffs.add(puff);
+      }
+      
+      // Squish the cloud a bit
+      cloud.scale.y = 0.6;
+      
+      // Position the cloud
+      cloud.position.set(x, y, z);
+      
+      // Add a small random rotation
+      cloud.rotation.y = Math.random() * Math.PI * 2;
+      
+      // Store properties for shadow projection calculation
+      cloud.userData.size = size;
+      cloud.userData.baseY = y;
+      
+      return cloud;
+    }
+    
+    // Create clouds system
+    const clouds = new THREE.Group();
+    scene.add(clouds);
+    
+    // Generate initial clouds
+    function generateClouds() {
+      // Clear existing clouds
+      while (clouds.children.length > 0) {
+        clouds.remove(clouds.children[0]);
+      }
+      
+      // Create new clouds in a wider area around the player
+      const cloudCount = 30; // Reduced for better performance
+      const cloudRange = 300;
+      const playerX = playerModel.position.x;
+      const playerZ = playerModel.position.z;
+      
+      for (let i = 0; i < cloudCount; i++) {
+        // Random position around the player
+        const angle = Math.random() * Math.PI * 2;
+        const distance = 20 + Math.random() * cloudRange;
+        const x = playerX + Math.cos(angle) * distance;
+        const z = playerZ + Math.sin(angle) * distance;
+        
+        // Random height
+        const y = 20 + Math.random() * 30;
+        
+        // Random size
+        const size = 2 + Math.random() * 6;
+        
+        const cloud = createCloud(x, y, z, size);
+        
+        // Add random velocity for movement
+        cloud.userData.velocity = {
+          x: (Math.random() - 0.5) * 2,
+          y: 0,
+          z: (Math.random() - 0.5) * 2
+        };
+        
+        clouds.add(cloud);
+      }
+    }
+    
+    // Update cloud positions and shadows
+    function updateClouds(delta) {
+      clouds.children.forEach((cloud) => {
+        // Move cloud according to its velocity
+        cloud.position.x += cloud.userData.velocity.x * delta;
+        cloud.position.z += cloud.userData.velocity.z * delta;
+        
+        // Rotate cloud slightly for additional movement effect
+        cloud.rotation.y += delta * 0.05;
+        
+        // Check if cloud is too far from player
+        const distance = cloud.position.distanceTo(playerModel.position);
+        if (distance > 350) {
+          // Reset cloud position to be near the player again
+          const angle = Math.random() * Math.PI * 2;
+          cloud.position.x = playerModel.position.x + Math.cos(angle) * 200;
+          cloud.position.z = playerModel.position.z + Math.sin(angle) * 200;
+          
+          // Vary the height a bit when recycling
+          cloud.position.y = cloud.userData.baseY + Math.random() * 5;
+        }
+      });
+    }
+    
+    // Procedural generation variables
+    const chunkSize = 50;
+    const viewDistance = 3; // How many chunks to render in each direction
+    const treesPerChunk = 30;
+    const cabinsPerChunk = 1;
+    
+    // Map of loaded chunks
+    const loadedChunks = new Map();
+    
+    // Seed function for deterministic generation
+    function seededRandom(x, z, seed = 12345) {
+      const dot = x * 12345.6789 + z * 9876.54321 + seed;
+      return (Math.sin(dot) * 43758.5453123) % 1;
+    }
+    
+    // Generate a chunk at given coordinates
+    function generateChunk(chunkX, chunkZ) {
+      const chunkKey = `${chunkX},${chunkZ}`;
+      
+      // Check if chunk already exists
+      if (loadedChunks.has(chunkKey)) {
+        return;
+      }
+      
+      // Create a chunk container
+      const chunk = new THREE.Group();
+      chunk.name = chunkKey;
+      
+      // Generate trees for this chunk
+      for (let i = 0; i < treesPerChunk; i++) {
+        // Use seeded random for deterministic placement
+        const seed1 = seededRandom(chunkX, chunkZ, i * 123.45);
+        const seed2 = seededRandom(chunkX, chunkZ, i * 678.91);
+        
+        const x = chunkX * chunkSize + seed1 * chunkSize;
+        const z = chunkZ * chunkSize + seed2 * chunkSize;
+        
+        // Tree type based on position
+        const treeType = Math.floor(seededRandom(x, z, i) * 3);
+        
+        const tree = createTree(x, z, treeType);
+        chunk.add(tree);
+      }
+      
+      // Generate cabins (approximately 1 per chunk)
+      if (seededRandom(chunkX, chunkZ, 9876) < cabinsPerChunk) {
+        const cabinX = chunkX * chunkSize + seededRandom(chunkX, chunkZ, 5432) * chunkSize * 0.8 + chunkSize * 0.1;
+        const cabinZ = chunkZ * chunkSize + seededRandom(chunkX, chunkZ, 1234) * chunkSize * 0.8 + chunkSize * 0.1;
+        
+        const cabin = createCabin(cabinX, cabinZ);
+        chunk.add(cabin);
+      }
+      
+      // Add chunk to the scene and track it
+      scene.add(chunk);
+      loadedChunks.set(chunkKey, chunk);
+    }
+    
+    // Unload distant chunks
+    function unloadDistantChunks(playerChunkX, playerChunkZ) {
+      for (let [key, chunk] of loadedChunks.entries()) {
+        const [chunkX, chunkZ] = key.split(',').map(Number);
+        
+        // Calculate Manhattan distance
+        const distance = Math.abs(chunkX - playerChunkX) + Math.abs(chunkZ - playerChunkZ);
+        
+        if (distance > viewDistance + 1) {
+          scene.remove(chunk);
+          loadedChunks.delete(key);
+        }
+      }
+    }
+    
+    // Update chunks based on player position
+    function updateChunks() {
+      const playerChunkX = Math.floor(playerModel.position.x / chunkSize);
+      const playerChunkZ = Math.floor(playerModel.position.z / chunkSize);
+      
+      // Load chunks in view distance
+      for (let x = playerChunkX - viewDistance; x <= playerChunkX + viewDistance; x++) {
+        for (let z = playerChunkZ - viewDistance; z <= playerChunkZ + viewDistance; z++) {
+          generateChunk(x, z);
+        }
+      }
+      
+      // Unload distant chunks
+      unloadDistantChunks(playerChunkX, playerChunkZ);
+    }
+    
+    // Initial chunk generation
+    updateChunks();
+    
+    // Generate initial clouds
+    generateClouds();
+    
+    // Custom controls
+    let moveForward = false;
+    let moveBackward = false;
+    let moveLeft = false;
+    let moveRight = false;
+    let canLook = false;
+    
+    // Speed control
+    let moveSpeed = 5.0;
+    const minSpeed = 1.0;
+    // No maximum speed limit
+    const speedIndicator = document.getElementById('speed-indicator');
+    const positionIndicator = document.getElementById('position-indicator');
+    
+    // Mouse control variables
+    let mouseX = 0;
+    let mouseY = 0;
+    let targetRotationY = 0;
+    let targetRotationX = 0;
+    const pitchLimit = Math.PI / 2 - 0.1; // Limit looking up/down
+    
+    // Enable/disable mouse controls
+    document.addEventListener('click', function() {
+      canLook = true;
+    });
+    
+    document.addEventListener('keydown', function(event) {
+      switch(event.code) {
+        case 'KeyW': moveForward = true; break;
+        case 'KeyA': moveLeft = true; break;
+        case 'KeyS': moveBackward = true; break;
+        case 'KeyD': moveRight = true; break;
+        case 'KeyV': // Toggle view mode
+          viewMode = viewMode === 'first-person' ? 'third-person' : 'first-person';
+          break;
+        case 'Escape': canLook = false; break;
+      }
+    });
+    
+    document.addEventListener('keyup', function(event) {
+      switch(event.code) {
+        case 'KeyW': moveForward = false; break;
+        case 'KeyA': moveLeft = false; break;
+        case 'KeyS': moveBackward = false; break;
+        case 'KeyD': moveRight = false; break;
+      }
+    });
+    
+    document.addEventListener('mousemove', function(event) {
+      if (!canLook) return;
+      
+      const movementX = event.movementX || 0;
+      const movementY = event.movementY || 0;
+      
+      // Adjust rotation based on mouse movement
+      targetRotationY -= movementX * 0.002;
+      targetRotationX -= movementY * 0.002;
+      
+      // Limit the up/down rotation
+      targetRotationX = Math.max(-pitchLimit, Math.min(pitchLimit, targetRotationX));
+    });
+    
+    // Mouse wheel for speed control
+    document.addEventListener('wheel', function(event) {
+      // Adjust speed based on scroll direction
+      const scrollAmount = event.deltaY * 0.01;
+      moveSpeed = Math.max(minSpeed, moveSpeed - scrollAmount);
+      
+      // Update speed indicator
+      speedIndicator.textContent = `Speed: ${moveSpeed.toFixed(1)}`;
+    });
+    
+    // Movement variables
+    const velocity = new THREE.Vector3();
+    const direction = new THREE.Vector3();
+    let prevTime = performance.now();
+    
+    // Animation
+    function animate() {
+      requestAnimationFrame(animate);
+      
+      const time = performance.now();
+      const delta = (time - prevTime) / 1000;
+      
+      // Update cloud positions and shadows
+      updateClouds(delta);
+      
+      // Update directional light target to follow player for consistent shadow direction
+      directionalLight.target.position.set(
+        playerModel.position.x,
+        0,
+        playerModel.position.z
+      );
+      
+      // Update camera rotation based on mouse
+      if (canLook) {
+        // Always rotate the player model based on mouse movement
+        playerModel.rotation.y = targetRotationY;
+        
+        if (viewMode === 'first-person') {
+          // In first-person, camera rotation matches player rotation
+          camera.rotation.y = targetRotationY;
+          camera.rotation.x = targetRotationX;
+        }
+        // In third-person, camera position and rotation are handled separately
+      }
+      
+      // Movement logic
+      velocity.x -= velocity.x * 10.0 * delta;
+      velocity.z -= velocity.z * 10.0 * delta;
+      
+      direction.z = Number(moveForward) - Number(moveBackward);
+      direction.x = Number(moveRight) - Number(moveLeft);
+      
+      if (direction.length() > 0) {
+        direction.normalize();
+      }
+      
+      // Apply movement using current speed setting
+      if (moveForward || moveBackward) velocity.z -= direction.z * moveSpeed * delta;
+      if (moveLeft || moveRight) velocity.x -= direction.x * moveSpeed * delta;
+      
+      // Move in the direction the player is facing (with reversed A/D keys)
+      const angle = playerModel.rotation.y;
+      const moveX = velocity.x * Math.cos(angle) - velocity.z * Math.sin(angle);
+      const moveZ = -velocity.z * Math.cos(angle) - velocity.x * Math.sin(angle);
+      
+      // Move player model
+      playerModel.position.x += moveX * delta;
+      playerModel.position.z += moveZ * delta;
+      
+      // Animate player model while moving
+      if (Math.abs(velocity.x) > 0.1 || Math.abs(velocity.z) > 0.1) {
+        const walkCycle = time * 0.01 * Math.min(moveSpeed, 10) / 5;
+        
+        // Simple leg animation
+        playerModel.children[4].position.z = Math.sin(walkCycle) * 0.2;
+        playerModel.children[5].position.z = Math.sin(walkCycle + Math.PI) * 0.2;
+        
+        // Simple arm animation
+        playerModel.children[2].position.z = Math.sin(walkCycle + Math.PI) * 0.2;
+        playerModel.children[3].position.z = Math.sin(walkCycle) * 0.2;
+      }
+      
+      // Update camera position based on view mode
+      if (viewMode === 'first-person') {
+        // First-person: position camera at head height
+        camera.position.set(
+          playerModel.position.x,
+          playerModel.position.y + 1.7,
+          playerModel.position.z
+        );
+        
+        // Set camera rotation directly
+        camera.rotation.y = playerModel.rotation.y;
+        camera.rotation.x = targetRotationX;
+        
+        // Hide the player model in first-person
+        playerModel.visible = false;
+      } else {
+        // Show the player model in third-person
+        playerModel.visible = true;
+        
+        // Get world position for the camera, keeping it behind the player
+        // regardless of movement direction
+        const idealOffset = new THREE.Vector3(0, cameraOffset.y, cameraOffset.z);
+        idealOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), playerModel.rotation.y);
+        
+        // Set camera to be behind the player
+        camera.position.set(
+          playerModel.position.x - idealOffset.x,
+          playerModel.position.y + idealOffset.y,
+          playerModel.position.z - idealOffset.z
+        );
+        
+        // Make camera look at a point slightly above the player
+        camera.lookAt(
+          playerModel.position.x,
+          playerModel.position.y + 1.0,
+          playerModel.position.z
+        );
+      }
+      
+      // Update position indicator
+      positionIndicator.textContent = `Position: (${Math.floor(playerModel.position.x)}, ${Math.floor(playerModel.position.z)})`;
+      
+      // Update chunks based on new position
+      updateChunks();
+      
+      prevTime = time;
+      
+      renderer.render(scene, camera);
+    }
+    
+    // Handle window resize
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+    
+    animate();
+  </script>
+</body>
+</html>
